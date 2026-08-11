@@ -1,0 +1,48 @@
+{% extends "users/basic.html" %} {% block content %}
+<div class="container mt-5">
+  <div class="row">
+    <div class="col-lg-6 mx-auto">
+      <div class="card">
+        <div class="card-body text-center">
+          <h4 class="card-title">{{ theater.movie.name }}</h4>
+          <p class="text-muted">{{ theater.name }} | {{ theater.time }}</p>
+
+          <div class="alert alert-warning" id="timer-box">
+            Complete your booking within
+            <strong><span id="countdown">{{ seconds_left }}</span> seconds</strong>
+            or these seats will be released.
+          </div>
+
+          <h6>Your seats:</h6>
+          <p>
+            {% for booking in bookings %}
+              <span class="badge bg-success me-1">{{ booking.seat.seat_number }}</span>
+            {% endfor %}
+          </p>
+
+          <form method="POST" id="confirm-form">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-success btn-lg">
+              Confirm Booking
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let secondsLeft = {{ seconds_left }};
+  const countdownEl = document.getElementById('countdown');
+
+  const timer = setInterval(function () {
+    secondsLeft -= 1;
+    countdownEl.textContent = secondsLeft;
+    if (secondsLeft <= 0) {
+      clearInterval(timer);
+      window.location.href = "{% url 'book_seats' theater.id %}";
+    }
+  }, 1000);
+</script>
+{% endblock %}
