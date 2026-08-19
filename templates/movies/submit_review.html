@@ -1,0 +1,41 @@
+{% extends "users/basic.html" %} {% block content %}
+<div class="container mt-5">
+  <div class="row">
+    <div class="col-lg-6 mx-auto">
+      <div class="card">
+        <div class="card-body">
+          <h4 class="card-title mb-4">
+            {% if existing_review %}Edit your review for{% else %}Review{% endif %}
+            {{ movie.name }}
+          </h4>
+
+          <form method="POST">
+            {% csrf_token %}
+
+            <div class="mb-3">
+              <label class="form-label">Your Rating</label>
+              <select name="rating" class="form-select" required>
+                <option value="">Choose a rating</option>
+                {% for i in "12345" %}
+                <option value="{{ i }}" {% if existing_review.rating|stringformat:"s" == i %}selected{% endif %}>
+                  {{ i }} star{{ i|add:"0"|pluralize }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Your Review</label>
+              <textarea name="comment" class="form-control" rows="4" placeholder="What did you think of the movie?">{{ existing_review.comment|default:'' }}</textarea>
+            </div>
+
+            <button type="submit" class="btn btn-primary">
+              {% if existing_review %}Update Review{% else %}Submit Review{% endif %}
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

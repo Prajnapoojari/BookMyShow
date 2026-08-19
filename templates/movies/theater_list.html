@@ -164,7 +164,7 @@
           </div>
         </div>
         {% endfor %}
-      {% else %}
+            {% else %}
         <!-- Message when no theaters are available -->
         <div class="no-theaters mt-4">
           <p>Sorry, no theaters are available for this movie at the moment.</p>
@@ -173,6 +173,59 @@
   
       <div class="non-cancellable mt-4">
         <i class="fas fa-circle text-warning"></i> Non-cancellable
+      </div>
+
+      <!-- Reviews Section -->
+      <div class="mt-5">
+        <h4>
+          Ratings & Reviews
+          {% if movie.average_rating %}
+          <span class="text-warning">
+            <i class="fas fa-star"></i> {{ movie.average_rating }}/5
+          </span>
+          ({{ reviews|length }} review{{ reviews|length|pluralize }})
+          {% else %}
+          <small class="text-muted">(No reviews yet)</small>
+          {% endif %}
+        </h4>
+
+        {% if user.is_authenticated %}
+          {% if can_review %}
+            <a href="{% url 'submit_review' movie.id %}" class="btn btn-outline-primary btn-sm mb-3">
+              {% if my_review %}Edit Your Review{% else %}Write a Review{% endif %}
+            </a>
+          {% else %}
+            <p class="text-muted"><small>Book and watch this movie to leave a review.</small></p>
+          {% endif %}
+        {% endif %}
+
+        {% for review in reviews %}
+        <div class="border-bottom py-3">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <strong>{{ review.user.username }}</strong>
+              {% if review.is_verified_viewer %}
+              <span class="badge bg-success ms-1"><i class="fas fa-check"></i> Verified Viewer</span>
+              {% endif %}
+              <div class="text-warning">
+                {% for i in "12345" %}
+                  {% if forloop.counter <= review.rating %}★{% else %}☆{% endif %}
+                {% endfor %}
+              </div>
+            </div>
+            <a href="{% url 'report_review' review.id %}" class="text-muted small" onclick="return confirm('Report this review as inappropriate?');">
+              <i class="fas fa-flag"></i> Report
+            </a>
+          </div>
+          <p class="mb-1 mt-2">{{ review.comment }}</p>
+          <small class="text-muted">
+            {{ review.created_at|date:"M d, Y" }}
+            {% if review.updated_at != review.created_at %}(edited){% endif %}
+          </small>
+        </div>
+        {% empty %}
+        <p class="text-muted">No reviews yet. Be the first to review this movie!</p>
+        {% endfor %}
       </div>
     </div>
   </body>

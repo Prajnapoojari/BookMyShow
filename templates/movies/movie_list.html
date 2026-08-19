@@ -4,16 +4,16 @@
 <div class="container py-5">
     <h1 class="text-center mb-5">Movies</h1>
 
-    <div class="row justify-content-center mb-5">
-        <div class="col-md-8">
+    <div class="row justify-content-center mb-4">
+        <div class="col-md-10">
             <form method="GET" action="{% url 'movie_list' %}" class="search-bar">
-                <div class="input-group">
+                <div class="input-group mb-3">
                     <input
                         class="form-control form-control-lg"
                         name="search"
                         placeholder="Search for Movies, Events, Plays, Sports and Activities"
                         type="text"
-                        value="{{ request.GET.search|default_if_none:'' }}"
+                        value="{{ search_query }}"
                         aria-label="Search for movies"
                     />
                     <div class="input-group-append">
@@ -22,10 +22,96 @@
                         </button>
                     </div>
                 </div>
+
+                <div class="row">
+                    <div class="col-md-3 mb-2">
+                        <select name="genre" class="form-select" onchange="this.form.submit()">
+                            <option value="">All Genres</option>
+                            {% for genre in all_genres %}
+                            <option value="{{ genre }}" {% if genre == selected_genre %}selected{% endif %}>{{ genre }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <select name="language" class="form-select" onchange="this.form.submit()">
+                            <option value="">All Languages</option>
+                            {% for lang in all_languages %}
+                            <option value="{{ lang }}" {% if lang == selected_language %}selected{% endif %}>{{ lang }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <select name="city" class="form-select" onchange="this.form.submit()">
+                            <option value="">All Cities</option>
+                            {% for city in all_cities %}
+                            <option value="{{ city }}" {% if city == selected_city %}selected{% endif %}>{{ city }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <select name="theater" class="form-select" onchange="this.form.submit()">
+                            <option value="">All Theaters</option>
+                            {% for theater in all_theaters %}
+                            <option value="{{ theater }}" {% if theater == selected_theater %}selected{% endif %}>{{ theater }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-3 mb-2">
+                        <input type="date" name="release_date" class="form-control" value="{{ selected_release_date }}" onchange="this.form.submit()">
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <select name="show_time" class="form-select" onchange="this.form.submit()">
+                            <option value="">Any Show Time</option>
+                            <option value="morning" {% if selected_show_time == 'morning' %}selected{% endif %}>Morning</option>
+                            <option value="afternoon" {% if selected_show_time == 'afternoon' %}selected{% endif %}>Afternoon</option>
+                            <option value="evening" {% if selected_show_time == 'evening' %}selected{% endif %}>Evening</option>
+                            <option value="night" {% if selected_show_time == 'night' %}selected{% endif %}>Night</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <select name="sort" class="form-select" onchange="this.form.submit()">
+                            <option value="">Sort by: Default</option>
+                            <option value="popularity" {% if sort_by == 'popularity' %}selected{% endif %}>Popularity</option>
+                            <option value="newest" {% if sort_by == 'newest' %}selected{% endif %}>Newest Release</option>
+                            <option value="rating" {% if sort_by == 'rating' %}selected{% endif %}>Rating</option>
+                            <option value="price" {% if sort_by == 'price' %}selected{% endif %}>Ticket Price</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <a href="{% url 'movie_list' %}" class="btn btn-outline-secondary w-100">Clear Filters</a>
+                    </div>
+                </div>
             </form>
         </div>
     </div>
 
+    {% if recommended_movies %}
+    <div class="mb-5">
+        <h4 class="mb-3">Recommended for You</h4>
+        <div class="row">
+            {% for movie in recommended_movies %}
+            <div class="col-md-3 mb-3">
+                <div class="card h-100 shadow-sm">
+                    <img src="{{ movie.image.url }}" class="card-img-top" alt="{{ movie.name }}" style="height: 180px; object-fit: cover;">
+                    <div class="card-body">
+                        <h6 class="card-title">{{ movie.name }}</h6>
+                        <p class="card-text mb-1"><i class="fas fa-star text-warning"></i> {{ movie.rating }}</p>
+                    </div>
+                    <div class="card-footer bg-white border-top-0">
+                        <a href="{% url 'theater_list' movie.id %}" class="btn btn-outline-primary btn-sm btn-block">View Theaters</a>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    <hr class="mb-5">
+    {% endif %}
+
+    <p class="text-muted mb-3">{{ movie_count }} movie{{ movie_count|pluralize }} found</p>
     <div class="row" id="movieList">
         {% for movie in movies %}
         <div class="col-md-4 mb-4">
@@ -55,6 +141,28 @@
         </div>
         {% endfor %}
     </div>
+
+    {% if page_obj.has_other_pages %}
+    <nav class="mt-4">
+        <ul class="pagination justify-content-center">
+            {% if page_obj.has_previous %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.previous_page_number }}&search={{ search_query }}&genre={{ selected_genre }}&language={{ selected_language }}&city={{ selected_city }}&theater={{ selected_theater }}&release_date={{ selected_release_date }}&show_time={{ selected_show_time }}&sort={{ sort_by }}">Previous</a>
+            </li>
+            {% endif %}
+
+            <li class="page-item disabled">
+                <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+            </li>
+
+            {% if page_obj.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.next_page_number }}&search={{ search_query }}&genre={{ selected_genre }}&language={{ selected_language }}&city={{ selected_city }}&theater={{ selected_theater }}&release_date={{ selected_release_date }}&show_time={{ selected_show_time }}&sort={{ sort_by }}">Next</a>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
 </div>
 
 <!-- Bootstrap JS and dependencies -->
@@ -74,38 +182,4 @@
         box-shadow: 0 4px 15px rgba(0,0,0,0.1) !important;
     }
 </style>
-
-<script>
-    $(document).ready(function() {
-        // Add animation to cards on hover
-        $('.card').hover(
-            function() { $(this).addClass('shadow'); },
-            function() { $(this).removeClass('shadow'); }
-        );
-
-        // Implement client-side filtering
-        $('input[name="search"]').on('input', function() {
-            var searchTerm = $(this).val().toLowerCase();
-            $('#movieList .col-md-4').each(function() {
-                var movieTitle = $(this).find('.card-title').text().toLowerCase();
-                if (movieTitle.includes(searchTerm)) {
-                    $(this).show();
-                } else {
-                    $(this).hide();
-                }
-            });
-        });
-    });
-</script>
-<!-- <h1>Movies</h1>
-<ul>
-    {% for movie in movies%}
-    <li>
-        <img src="{{movie.image.url}}" alt="image" >
-        <strong>{{movie.name}}</strong>{{movie.rating}}
-        <p>Cast:{{movie.cast}}</p>
-        <a href="{% url 'theater_list' movie.id %}">View Theaters</a>
-    </li>
-    {% endfor %}
-</ul> -->
 {% endblock %}
