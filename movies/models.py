@@ -1,3 +1,4 @@
+import re
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models
 from django.contrib.auth.models import User 
@@ -25,10 +26,24 @@ class Movie(models.Model):
     ]
     age_certification = models.CharField(max_length=2, choices=AGE_RATING_CHOICES, blank=True, default='')
 
+
     def average_rating(self):
         """Calculated from actual user reviews, not the fixed 'rating' field."""
         result = self.reviews.aggregate(avg=models.Avg('rating'))
         return round(result['avg'], 1) if result['avg'] else None
+
+    def get_trailer_embed_url(self):
+        """Safely turns a YouTube link into an embeddable URL. Returns None if it's not a valid YouTube link."""
+        if not self.trailer_url:
+            return None
+        match = re.search(
+            r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)([a-zA-Z0-9_-]{11})',
+            self.trailer_url
+        )
+        if match:
+            video_id = match.group(1)
+            return f'https://www.youtube.com/embed/{video_id}'
+        return None
 
     def __str__(self):
         return self.name

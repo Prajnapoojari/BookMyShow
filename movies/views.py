@@ -1,12 +1,122 @@
+from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import render, redirect ,get_object_or_404
 from .models import Movie,Theater,Seat,Booking,Review
-from django.db.models import Count
+from django.db import models
+from django.db.models import Count, Sum
 from django.core.paginator import Paginator
 from django.contrib.auth.decorators import login_required
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.contrib import messages
 from datetime import timedelta
+
+@staff_member_required
+def admin_dashboard(request):
+    now = timezone.now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - timedelta(days=today_start.weekday())
+    month_start = today_start.replace(day=1)
+    year_start = today_start.replace(month=1, day=1)
+
+    # custom date range filter
+    range_start = request.GET.get('start_date', '')
+    range_end = request.GET.get('end_date', '')
+
+    confirmed = Booking.objects.filter(status='confirmed')
+    range_bookings = confirmed
+    if range_start:
+        range_bookings = range_bookings.filter(booked_at__date__gte=range_start)
+    if range_end:
+        range_bookings = range_bookings.filter(booked_at__date__lte=range_end)
+
+    range_revenue = range_bookings.aggregate(total=Sum('theater__ticket_price'))['total'] or 0
+    range_count = range_bookings.count()
+
+    def revenue_since(start_time):
+        result = confirmed.filter(booked_at__gte=start_time).aggregate(
+            total=Sum('theater__ticket_price')
+        )
+        return result['total'] or 0
+
+    revenue_today = revenue_since(today_start)
+    revenue_week = revenue_since(week_start)
+    revenue_month = revenue_since(month_start)
+    revenue_year = revenue_since(year_start)
+
+    top_movies = Movie.objects.annotate(
+        booking_count=Count('theaters__seats__booking', filter=models.Q(theaters__seats__booking__status='confirmed'))
+    ).order_by('-booking_count')[:5]
+
+    top_theaters = Theater.objects.annotate(
+        booking_count=Count('seats__booking', filter=models.Q(seats__booking__status='confirmed')),
+        revenue=Sum('seats__booking__theater__ticket_price', filter=models.Q(seats__booking__status='confirmed'))
+    ).order_by('-booking_count')[:5]
+
+    # Occupancy % per theater: booked seats / total seats
+    theater_occupancy = []
+    for theater in Theater.objects.all():
+        total_seats = theater.seats.count()
+        booked_seats = theater.seats.filter(is_booked=True).count()
+        occupancy_pct = round((booked_seats / total_seats) * 100, 1) if total_seats else 0
+        theater_occupancy.append({
+            'theater': theater,
+            'total_seats': total_seats,
+            'booked_seats': booked_seats,
+            'occupancy_pct': occupancy_pct,
+        })
+
+        # Booking trends: bookings per day, last 7 days
+        # Booking trends: bookings per day, last 7 days
+    booking_trend = (
+        Booking.objects.filter(booked_at__gte=today_start - timedelta(days=6))
+        .annotate(day=models.functions.TruncDate('booked_at'))
+        .values('day')
+        .annotate(count=Count('id'))
+        .order_by('day')
+    )
+
+    # Peak booking hours: which hour of the day gets the most bookings
+    peak_hours = (
+        Booking.objects.annotate(hour=models.functions.ExtractHour('booked_at'))
+        .values('hour')
+        .annotate(count=Count('id'))
+        .order_by('-count')[:5]
+    )
+
+    # Cancellation stats
+    total_bookings = Booking.objects.count()
+    cancelled_count = Booking.objects.filter(status='cancelled').count()
+    cancellation_rate = round((cancelled_count / total_bookings) * 100, 1) if total_bookings else 0
+
+    # User growth: new signups per day, last 7 days
+    from django.contrib.auth.models import User
+    user_growth = (
+        User.objects.filter(date_joined__gte=today_start - timedelta(days=6))
+        .annotate(day=models.functions.TruncDate('date_joined'))
+        .values('day')
+        .annotate(count=Count('id'))
+        .order_by('day')
+    )
+
+    return render(request, 'movies/admin_dashboard.html', {
+        'revenue_today': revenue_today,
+        'revenue_week': revenue_week,
+        'revenue_month': revenue_month,
+        'revenue_year': revenue_year,
+        'top_movies': top_movies,
+        'top_theaters': top_theaters,
+        'theater_occupancy': theater_occupancy,
+        'booking_trend': booking_trend,
+        'peak_hours': peak_hours,
+        'total_bookings': total_bookings,
+        'cancelled_count': cancelled_count,
+        'cancellation_rate': cancellation_rate,
+        'user_growth': user_growth,
+        'range_start': range_start,
+        'range_end': range_end,
+        'range_revenue': range_revenue,
+        'range_count': range_count,
+    })
 
 HOLD_MINUTES = 2  # how long a seat stays "reserved" before it's auto-released
 
@@ -123,7 +233,6 @@ def theater_list(request,movie_id):
         recently_viewed.remove(movie_id)
     recently_viewed.insert(0, movie_id)
     request.session['recently_viewed'] = recently_viewed[:5]  # keep only the last 5
-
     reviews = movie.reviews.all().order_by('-created_at')
     my_review = None
     can_review = False
@@ -131,12 +240,31 @@ def theater_list(request,movie_id):
         my_review = reviews.filter(user=request.user).first()
         can_review = Booking.objects.filter(user=request.user, movie=movie, status='confirmed').exists()
 
+    # Similar movies: same genre OR same language, excluding this movie itself
+    similar_movies = Movie.objects.exclude(id=movie.id)
+    if movie.genre or movie.language:
+        similar_movies = similar_movies.filter(
+            models.Q(genre=movie.genre) | models.Q(language=movie.language)
+        )
+    similar_movies = similar_movies.distinct()[:4]
+
+    # Trending: most-booked movies overall, excluding this one
+    trending_movies = Movie.objects.exclude(id=movie.id).annotate(
+        booking_count=Count('theaters__seats__booking')
+    ).order_by('-booking_count')[:4]
+
+    # Recently released: newest release dates, excluding this one
+    recent_movies = Movie.objects.exclude(id=movie.id).exclude(release_date__isnull=True).order_by('-release_date')[:4]
+
     return render(request,'movies/theater_list.html',{
         'movie':movie,
         'theaters':theater,
         'reviews': reviews,
         'my_review': my_review,
         'can_review': can_review,
+        'similar_movies': similar_movies,
+        'trending_movies': trending_movies,
+        'recent_movies': recent_movies,
     })
 
 @login_required(login_url='/login/')

@@ -137,6 +137,13 @@
     <div class="container">
       <!-- Movie Title -->
       <div class="movie-title">Movie - {{ movie.name }}</div>
+      {% with embed_url=movie.get_trailer_embed_url %}
+      {% if embed_url %}
+      <div class="ratio ratio-16x9 mb-4" style="max-width: 700px; margin: 0 auto;">
+        <iframe src="{{ embed_url }}" title="{{ movie.name }} trailer" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+      </div>
+      {% endif %}
+      {% endwith %}
   
       <!-- Conditional Check for Theaters -->
       {% if theaters %}
@@ -223,10 +230,53 @@
             {% if review.updated_at != review.created_at %}(edited){% endif %}
           </small>
         </div>
-        {% empty %}
+                {% empty %}
         <p class="text-muted">No reviews yet. Be the first to review this movie!</p>
         {% endfor %}
       </div>
+
+      <!-- Similar / Trending / Recent Movies -->
+      {% if similar_movies %}
+      <div class="mt-5">
+        <h5>Similar Movies</h5>
+        <div class="d-flex flex-wrap gap-3">
+          {% for m in similar_movies %}
+          <a href="{% url 'theater_list' m.id %}" class="text-decoration-none text-dark" style="width: 140px;">
+            <img src="{{ m.image.url }}" style="width: 140px; height: 200px; object-fit: cover; border-radius: 6px;">
+            <p class="small mt-1 mb-0">{{ m.name }}</p>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if trending_movies %}
+      <div class="mt-5">
+        <h5>Trending Now</h5>
+        <div class="d-flex flex-wrap gap-3">
+          {% for m in trending_movies %}
+          <a href="{% url 'theater_list' m.id %}" class="text-decoration-none text-dark" style="width: 140px;">
+            <img src="{{ m.image.url }}" style="width: 140px; height: 200px; object-fit: cover; border-radius: 6px;">
+            <p class="small mt-1 mb-0">{{ m.name }}</p>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if recent_movies %}
+      <div class="mt-5">
+        <h5>Recently Released</h5>
+        <div class="d-flex flex-wrap gap-3">
+          {% for m in recent_movies %}
+          <a href="{% url 'theater_list' m.id %}" class="text-decoration-none text-dark" style="width: 140px;">
+            <img src="{{ m.image.url }}" style="width: 140px; height: 200px; object-fit: cover; border-radius: 6px;">
+            <p class="small mt-1 mb-0">{{ m.name }}</p>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
     </div>
   </body>
 <!-- <h1>Theater for {{movie.name}}</h1>

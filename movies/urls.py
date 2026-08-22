@@ -7,4 +7,5 @@ urlpatterns=[
     path('theater/<int:theater_id>/confirm/',views.confirm_booking,name='confirm_booking'),
     path('<int:movie_id>/review/',views.submit_review,name='submit_review'),
     path('review/<int:review_id>/report/',views.report_review,name='report_review'),
+    path('dashboard/', views.admin_dashboard, name='admin_dashboard'),
 ]
