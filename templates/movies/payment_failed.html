@@ -1,0 +1,7 @@
+{% extends "users/basic.html" %} {% block content %}
+<div class="container mt-5 text-center">
+  <h4 class="text-danger">Payment Not Completed</h4>
+  <p>Your seat hold has been released. You're welcome to try booking again.</p>
+  <a href="{% url 'movie_list' %}" class="btn btn-primary">Browse Movies</a>
+</div>
+{% endblock %}

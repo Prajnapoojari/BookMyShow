@@ -8,4 +8,13 @@ urlpatterns=[
     path('<int:movie_id>/review/',views.submit_review,name='submit_review'),
     path('review/<int:review_id>/report/',views.report_review,name='report_review'),
     path('dashboard/', views.admin_dashboard, name='admin_dashboard'),
+    path('dashboard/export/', views.export_bookings_csv, name='export_bookings_csv'),
+    path('ticket/<uuid:order_id>/download/', views.download_ticket, name='download_ticket'),
+    path('payment/success/', views.payment_success, name='payment_success'),
+    path('payment/failed/<uuid:order_id>/', views.payment_failed, name='payment_failed'),
+    path(
+    'payment/simulate/<uuid:order_id>/',
+    views.simulate_payment,
+    name='simulate_payment'
+),
 ]

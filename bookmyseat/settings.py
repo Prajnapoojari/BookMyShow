@@ -131,4 +131,20 @@ STATIC_URL = 'static/'
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Celery settings
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+DEFAULT_FROM_EMAIL = 'BookMySeat <noreply@bookmyseat.com>'
+
+# Razorpay settings (placeholder keys — replace with real test keys once available)
+RAZORPAY_KEY_ID = 'rzp_test_placeholder'
+RAZORPAY_KEY_SECRET = 'placeholder_secret'
+RAZORPAY_SANDBOX_MODE = RAZORPAY_KEY_ID == 'rzp_test_placeholder'

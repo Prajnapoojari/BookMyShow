@@ -1,0 +1,56 @@
+{% extends "users/basic.html" %} {% block content %}
+<div class="container mt-5 text-center">
+  <h4>Redirecting you to secure payment for {{ movie_name }}...</h4>
+  <p class="text-muted">If the payment window doesn't open automatically, click the button below.</p>
+  <button id="pay-btn" class="btn btn-primary btn-lg">Pay Now</button>
+</div>
+
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+  function openCheckout() {
+    var options = {
+      "key": "{{ razorpay_key_id }}",
+      "amount": "{{ amount_paise }}",
+      "currency": "INR",
+      "name": "BookMySeat",
+      "description": "Ticket for {{ movie_name }}",
+      "order_id": "{{ razorpay_order_id }}",
+      "prefill": {
+        "email": "{{ user_email }}"
+      },
+      "handler": function (response) {
+        // Payment succeeded on Razorpay's side — now send proof to OUR server to verify and confirm
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = "{% url 'payment_success' %}";
+
+        function addField(name, value) {
+          var input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = name;
+          input.value = value;
+          form.appendChild(input);
+        }
+        addField('razorpay_payment_id', response.razorpay_payment_id);
+        addField('razorpay_order_id', response.razorpay_order_id);
+        addField('razorpay_signature', response.razorpay_signature);
+        addField('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+        document.body.appendChild(form);
+        form.submit();
+      },
+      "modal": {
+        "ondismiss": function () {
+          // User closed the payment popup without paying
+          window.location.href = "{% url 'payment_failed' order_id %}";
+        }
+      }
+    };
+    var rzp = new Razorpay(options);
+    rzp.open();
+  }
+
+  document.getElementById('pay-btn').addEventListener('click', openCheckout);
+  window.onload = openCheckout;  // try to open automatically
+</script>
+{% endblock %}

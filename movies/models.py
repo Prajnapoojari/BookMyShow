@@ -26,7 +26,6 @@ class Movie(models.Model):
     ]
     age_certification = models.CharField(max_length=2, choices=AGE_RATING_CHOICES, blank=True, default='')
 
-
     def average_rating(self):
         """Calculated from actual user reviews, not the fixed 'rating' field."""
         result = self.reviews.aggregate(avg=models.Avg('rating'))
@@ -49,9 +48,6 @@ class Movie(models.Model):
         return self.name
 
 
-    def __str__(self):
-        return self.name
-
 class MoviePoster(models.Model):
     movie = models.ForeignKey(Movie, on_delete=models.CASCADE, related_name='posters')
     image = models.ImageField(upload_to="movies/posters/")
@@ -59,7 +55,6 @@ class MoviePoster(models.Model):
     def __str__(self):
         return f'Poster for {self.movie.name}'
 
-    
 
 class Theater(models.Model):
     name = models.CharField(max_length=255)
@@ -71,6 +66,7 @@ class Theater(models.Model):
     def __str__(self):
         return f'{self.name} - {self.movie.name} at {self.time}'
 
+
 class Seat(models.Model):
     theater = models.ForeignKey(Theater,on_delete=models.CASCADE,related_name='seats')
     seat_number = models.CharField(max_length=10)
@@ -78,6 +74,10 @@ class Seat(models.Model):
     reserved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='reserved_seats')
     reserved_until = models.DateTimeField(null=True, blank=True)
 
+    class Meta:
+        indexes = [
+            models.Index(fields=['is_booked']),
+        ]
 
     def is_reserved(self):
         """True only while someone's 2-minute hold is still active."""
@@ -102,7 +102,7 @@ class Seat(models.Model):
 
     def __str__(self):
         return f'{self.seat_number} in {self.theater.name}'
-    
+
 
 class Booking(models.Model):
     STATUS_CHOICES = [
@@ -116,11 +116,18 @@ class Booking(models.Model):
     theater=models.ForeignKey(Theater,on_delete=models.CASCADE)
     booked_at=models.DateTimeField(auto_now_add=True)
     status=models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
-    
+    order_id = models.UUIDField(null=True, blank=True, editable=False)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['status']),
+            models.Index(fields=['booked_at']),
+            models.Index(fields=['status', 'booked_at']),
+        ]
+
     def __str__(self):
         return f'Booking by{self.user.username} for {self.seat.seat_number} at {self.theater.name}'
 
-from django.core.validators import MinValueValidator, MaxValueValidator
 
 class Review(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reviews')
@@ -140,3 +147,21 @@ class Review(models.Model):
 
     def __str__(self):
         return f'{self.user.username} rated {self.movie.name}: {self.rating}/5'
+
+class Payment(models.Model):
+    STATUS_CHOICES = [
+        ('created', 'Created'),
+        ('success', 'Success'),
+        ('failed', 'Failed'),
+    ]
+    order_id = models.UUIDField()  # matches Booking.order_id for this purchase
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    amount = models.DecimalField(max_digits=8, decimal_places=2)
+    razorpay_order_id = models.CharField(max_length=100, unique=True)
+    razorpay_payment_id = models.CharField(max_length=100, blank=True, null=True, unique=True)
+    razorpay_signature = models.CharField(max_length=255, blank=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='created')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f'Payment {self.razorpay_order_id} - {self.status}'

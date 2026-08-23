@@ -2,6 +2,35 @@
 <div class="container mt-5">
   <h2>Admin Dashboard</h2>
   <p class="text-muted">Welcome, {{ user.username }}.</p>
+    <div class="card p-3 mt-4 mb-3">
+    <h5>Custom Date Range Report</h5>
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label mb-0">From</label>
+        <input type="date" name="start_date" class="form-control" value="{{ range_start }}">
+      </div>
+      <div class="col-auto">
+        <label class="form-label mb-0">To</label>
+        <input type="date" name="end_date" class="form-control" value="{{ range_end }}">
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-primary">Apply</button>
+      </div>
+      <div class="col-auto">
+        <a href="{% url 'export_bookings_csv' %}?start_date={{ range_start }}&end_date={{ range_end }}" class="btn btn-outline-success">
+          <i class="fas fa-download"></i> Export CSV
+        </a>
+      </div>
+    </form>
+    {% if range_start or range_end %}
+    <p class="mt-3 mb-0">
+      In this range: <strong>{{ range_count }}</strong> confirmed bookings,
+      <strong>₹{{ range_revenue }}</strong> revenue.
+    </p>
+    {% endif %}
+  </div>
+
+  <h5 class="mt-4">Revenue</h5>
 
   <h5 class="mt-4">Revenue</h5>
   <div class="row">

@@ -1,0 +1,27 @@
+{% extends "users/basic.html" %} {% block content %}
+<div class="container mt-5">
+  <div class="row">
+    <div class="col-lg-6 mx-auto">
+      <div class="card">
+        <div class="card-body text-center">
+          <span class="badge bg-warning text-dark mb-3">SANDBOX MODE — no real Razorpay account connected yet</span>
+          <h4>Pay ₹{{ amount }} for {{ movie_name }}</h4>
+          <p class="text-muted">This screen simulates Razorpay's checkout since no real test keys are set up yet.</p>
+
+          <form method="POST" action="{% url 'simulate_payment' order_id %}" class="d-inline">
+            {% csrf_token %}
+            <input type="hidden" name="outcome" value="success">
+            <button type="submit" class="btn btn-success">Simulate Successful Payment</button>
+          </form>
+
+          <form method="POST" action="{% url 'simulate_payment' order_id %}" class="d-inline">
+            {% csrf_token %}
+            <input type="hidden" name="outcome" value="fail">
+            <button type="submit" class="btn btn-outline-danger">Simulate Failed Payment</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

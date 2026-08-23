@@ -1,6 +1,12 @@
+import csv
+import uuid
+import razorpay
+from django.conf import settings
+from .tasks import send_ticket_email
+from django.http import HttpResponse
 from django.contrib.admin.views.decorators import staff_member_required
-from django.shortcuts import render, redirect ,get_object_or_404
-from .models import Movie,Theater,Seat,Booking,Review
+from django.shortcuts import render, redirect, get_object_or_404
+from .models import Movie,Theater,Seat,Booking,Review,Payment
 from django.db import models
 from django.db.models import Count, Sum
 from django.core.paginator import Paginator
@@ -18,7 +24,6 @@ def admin_dashboard(request):
     month_start = today_start.replace(day=1)
     year_start = today_start.replace(month=1, day=1)
 
-    # custom date range filter
     range_start = request.GET.get('start_date', '')
     range_end = request.GET.get('end_date', '')
 
@@ -52,7 +57,6 @@ def admin_dashboard(request):
         revenue=Sum('seats__booking__theater__ticket_price', filter=models.Q(seats__booking__status='confirmed'))
     ).order_by('-booking_count')[:5]
 
-    # Occupancy % per theater: booked seats / total seats
     theater_occupancy = []
     for theater in Theater.objects.all():
         total_seats = theater.seats.count()
@@ -65,8 +69,6 @@ def admin_dashboard(request):
             'occupancy_pct': occupancy_pct,
         })
 
-        # Booking trends: bookings per day, last 7 days
-        # Booking trends: bookings per day, last 7 days
     booking_trend = (
         Booking.objects.filter(booked_at__gte=today_start - timedelta(days=6))
         .annotate(day=models.functions.TruncDate('booked_at'))
@@ -75,7 +77,6 @@ def admin_dashboard(request):
         .order_by('day')
     )
 
-    # Peak booking hours: which hour of the day gets the most bookings
     peak_hours = (
         Booking.objects.annotate(hour=models.functions.ExtractHour('booked_at'))
         .values('hour')
@@ -83,12 +84,10 @@ def admin_dashboard(request):
         .order_by('-count')[:5]
     )
 
-    # Cancellation stats
     total_bookings = Booking.objects.count()
     cancelled_count = Booking.objects.filter(status='cancelled').count()
     cancellation_rate = round((cancelled_count / total_bookings) * 100, 1) if total_bookings else 0
 
-    # User growth: new signups per day, last 7 days
     from django.contrib.auth.models import User
     user_growth = (
         User.objects.filter(date_joined__gte=today_start - timedelta(days=6))
@@ -118,7 +117,40 @@ def admin_dashboard(request):
         'range_count': range_count,
     })
 
-HOLD_MINUTES = 2  # how long a seat stays "reserved" before it's auto-released
+HOLD_MINUTES = 2
+
+@staff_member_required
+def export_bookings_csv(request):
+    range_start = request.GET.get('start_date', '')
+    range_end = request.GET.get('end_date', '')
+
+    bookings = Booking.objects.filter(
+        status='confirmed'
+    ).select_related('user', 'movie', 'theater', 'seat')
+
+    if range_start:
+        bookings = bookings.filter(booked_at__date__gte=range_start)
+    if range_end:
+        bookings = bookings.filter(booked_at__date__lte=range_end)
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="bookings_report.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow(['Booking ID', 'User', 'Movie', 'Theater', 'Seat', 'Ticket Price', 'Booked At'])
+
+    for booking in bookings:
+        writer.writerow([
+            booking.id,
+            booking.user.username,
+            booking.movie.name,
+            booking.theater.name,
+            booking.seat.seat_number,
+            booking.theater.ticket_price,
+            booking.booked_at.strftime('%Y-%m-%d %H:%M'),
+        ])
+
+    return response
 
 def movie_list(request):
     search_query = request.GET.get('search', '')
@@ -146,19 +178,14 @@ def movie_list(request):
         movies = movies.filter(release_date=selected_release_date)
     if selected_show_time:
         time_ranges = {
-            'morning': (6, 12),
-            'afternoon': (12, 17),
-            'evening': (17, 21),
-            'night': (21, 24),
+            'morning': (6, 12), 'afternoon': (12, 17), 'evening': (17, 21), 'night': (21, 24),
         }
         if selected_show_time in time_ranges:
             start_hour, end_hour = time_ranges[selected_show_time]
             movies = movies.filter(theaters__time__hour__gte=start_hour, theaters__time__hour__lt=end_hour)
 
-    # filtering "through" theaters can create duplicate rows, so remove duplicates
     movies = movies.distinct()
 
-    # dropdown option lists
     all_genres = Movie.objects.exclude(genre='').values_list('genre', flat=True).distinct()
     all_languages = Movie.objects.exclude(language='').values_list('language', flat=True).distinct()
     all_cities = Theater.objects.exclude(city='').values_list('city', flat=True).distinct()
@@ -179,9 +206,7 @@ def movie_list(request):
     page_number = request.GET.get('page', 1)
     page_obj = paginator.get_page(page_number)
 
-    # ---- Recommended for You ----
     preferred_genres = set()
-
     if request.user.is_authenticated:
         booked_genres = Booking.objects.filter(user=request.user).values_list('movie__genre', flat=True)
         preferred_genres.update([g for g in booked_genres if g])
@@ -199,7 +224,6 @@ def movie_list(request):
         recommended_movies = recommended_movies.distinct()[:4]
 
     if not recommended_movies:
-        # fallback for new users with no history yet: show trending movies
         recommended_movies = Movie.objects.annotate(
             booking_count=Count('theaters__seats__booking')
         ).order_by('-booking_count')[:4]
@@ -227,12 +251,11 @@ def theater_list(request,movie_id):
     movie = get_object_or_404(Movie,id=movie_id)
     theater=Theater.objects.filter(movie=movie)
 
-    # remember this movie was viewed, for the "Recommended for You" feature
     recently_viewed = request.session.get('recently_viewed', [])
     if movie_id in recently_viewed:
         recently_viewed.remove(movie_id)
     recently_viewed.insert(0, movie_id)
-    request.session['recently_viewed'] = recently_viewed[:5]  # keep only the last 5
+    request.session['recently_viewed'] = recently_viewed[:5]
     reviews = movie.reviews.all().order_by('-created_at')
     my_review = None
     can_review = False
@@ -240,7 +263,6 @@ def theater_list(request,movie_id):
         my_review = reviews.filter(user=request.user).first()
         can_review = Booking.objects.filter(user=request.user, movie=movie, status='confirmed').exists()
 
-    # Similar movies: same genre OR same language, excluding this movie itself
     similar_movies = Movie.objects.exclude(id=movie.id)
     if movie.genre or movie.language:
         similar_movies = similar_movies.filter(
@@ -248,12 +270,10 @@ def theater_list(request,movie_id):
         )
     similar_movies = similar_movies.distinct()[:4]
 
-    # Trending: most-booked movies overall, excluding this one
     trending_movies = Movie.objects.exclude(id=movie.id).annotate(
         booking_count=Count('theaters__seats__booking')
     ).order_by('-booking_count')[:4]
 
-    # Recently released: newest release dates, excluding this one
     recent_movies = Movie.objects.exclude(id=movie.id).exclude(release_date__isnull=True).order_by('-release_date')[:4]
 
     return render(request,'movies/theater_list.html',{
@@ -310,7 +330,6 @@ def _release_expired_seats(theater):
     """Free up any seat whose 2-minute hold has run out. Called every time seats are viewed."""
     expired = Seat.objects.filter(theater=theater, reserved_until__lte=timezone.now())
     for seat in expired:
-        # also clean up the pending Booking row that was holding this seat
         Booking.objects.filter(seat=seat, status='pending').delete()
         seat.reserved_by = None
         seat.reserved_until = None
@@ -320,7 +339,7 @@ def _release_expired_seats(theater):
 @login_required(login_url='/login/')
 def book_seats(request, theater_id):
     theater = get_object_or_404(Theater, id=theater_id)
-    _release_expired_seats(theater)  # clean up any stale holds before showing the page
+    _release_expired_seats(theater)
     seats = Seat.objects.filter(theater=theater)
 
     if request.method == 'POST':
@@ -356,10 +375,10 @@ def book_seats(request, theater_id):
         if not reserved_seats:
             return redirect('book_seats', theater_id=theater.id)
 
-        # send them to the confirm/payment page with their 2-minute countdown
         return redirect('confirm_booking', theater_id=theater.id)
 
     return render(request, 'movies/seat_selection.html', {'theaters': theater, 'seats': seats})
+
 
 @login_required(login_url='/login/')
 def confirm_booking(request, theater_id):
@@ -375,17 +394,49 @@ def confirm_booking(request, theater_id):
         return redirect('book_seats', theater_id=theater.id)
 
     if request.method == 'POST':
-        with transaction.atomic():
-            for booking in my_pending.select_for_update():
-                booking.status = 'confirmed'
-                booking.save(update_fields=['status'])
-                seat = booking.seat
-                seat.is_booked = True
-                seat.reserved_by = None
-                seat.reserved_until = None
-                seat.save(update_fields=['is_booked', 'reserved_by', 'reserved_until'])
-        messages.success(request, "Booking confirmed!")
-        return redirect('profile')
+        order_id = uuid.uuid4()
+        total_amount = my_pending.count() * theater.ticket_price
+        my_pending.update(order_id=order_id)
+
+        if settings.RAZORPAY_SANDBOX_MODE:
+            # No real Razorpay account yet — simulate an order so the flow can still be tested.
+            fake_razorpay_order_id = f'order_SANDBOX_{order_id}'
+            Payment.objects.create(
+                order_id=order_id,
+                user=request.user,
+                amount=total_amount,
+                razorpay_order_id=fake_razorpay_order_id,
+                status='created',
+            )
+            return render(request, 'movies/sandbox_checkout.html', {
+                'order_id': order_id,
+                'amount': total_amount,
+                'movie_name': theater.movie.name,
+            })
+
+        client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
+        razorpay_order = client.order.create({
+            'amount': int(total_amount * 100),
+            'currency': 'INR',
+            'receipt': str(order_id),
+        })
+
+        Payment.objects.create(
+            order_id=order_id,
+            user=request.user,
+            amount=total_amount,
+            razorpay_order_id=razorpay_order['id'],
+            status='created',
+        )
+
+        return render(request, 'movies/razorpay_checkout.html', {
+            'razorpay_order_id': razorpay_order['id'],
+            'razorpay_key_id': settings.RAZORPAY_KEY_ID,
+            'amount_paise': int(total_amount * 100),
+            'order_id': order_id,
+            'user_email': request.user.email,
+            'movie_name': theater.movie.name,
+        })
 
     hold_until = min(b.seat.reserved_until for b in my_pending if b.seat.reserved_until)
     seconds_left = max(0, int((hold_until - timezone.now()).total_seconds()))
@@ -395,3 +446,120 @@ def confirm_booking(request, theater_id):
         'bookings': my_pending,
         'seconds_left': seconds_left,
     })
+
+
+@login_required(login_url='/login/')
+def download_ticket(request, order_id):
+    from .ticket_utils import generate_ticket_pdf
+
+    bookings = list(Booking.objects.filter(
+        order_id=order_id, user=request.user, status='confirmed'
+    ).select_related('movie', 'theater', 'seat'))
+
+    if not bookings:
+        messages.error(request, "Ticket not found.")
+        return redirect('profile')
+
+    pdf_bytes = generate_ticket_pdf(bookings)
+
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="ticket_{order_id}.pdf"'
+    return response
+
+
+@login_required(login_url='/login/')
+def payment_success(request):
+    if request.method != 'POST':
+        return redirect('movie_list')
+
+    razorpay_payment_id = request.POST.get('razorpay_payment_id')
+    razorpay_order_id = request.POST.get('razorpay_order_id')
+    razorpay_signature = request.POST.get('razorpay_signature')
+
+    payment = get_object_or_404(Payment, razorpay_order_id=razorpay_order_id, user=request.user)
+
+    client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
+
+    try:
+        client.utility.verify_payment_signature({
+            'razorpay_order_id': razorpay_order_id,
+            'razorpay_payment_id': razorpay_payment_id,
+            'razorpay_signature': razorpay_signature,
+        })
+        signature_valid = True
+    except razorpay.errors.SignatureVerificationError:
+        signature_valid = False
+
+    if not signature_valid:
+        payment.status = 'failed'
+        payment.save(update_fields=['status'])
+        messages.error(request, "Payment verification failed. Please try again.")
+        return redirect('payment_failed', order_id=payment.order_id)
+
+    with transaction.atomic():
+        payment.razorpay_payment_id = razorpay_payment_id
+        payment.razorpay_signature = razorpay_signature
+        payment.status = 'success'
+        payment.save(update_fields=['razorpay_payment_id', 'razorpay_signature', 'status'])
+
+        bookings = Booking.objects.filter(order_id=payment.order_id, status='pending').select_for_update()
+        for booking in bookings:
+            booking.status = 'confirmed'
+            booking.save(update_fields=['status'])
+            seat = booking.seat
+            seat.is_booked = True
+            seat.reserved_by = None
+            seat.reserved_until = None
+            seat.save(update_fields=['is_booked', 'reserved_by', 'reserved_until'])
+
+    send_ticket_email.delay(str(payment.order_id))
+    messages.success(request, "Payment successful! Your ticket is being emailed to you.")
+    return redirect('profile')
+
+
+@login_required(login_url='/login/')
+def payment_failed(request, order_id):
+    bookings = Booking.objects.filter(order_id=order_id, user=request.user, status='pending')
+    for booking in bookings:
+        seat = booking.seat
+        seat.reserved_by = None
+        seat.reserved_until = None
+        seat.save(update_fields=['reserved_by', 'reserved_until'])
+    bookings.delete()
+
+    Payment.objects.filter(order_id=order_id, user=request.user).update(status='failed')
+
+    messages.error(request, "Payment was not completed. Your seat hold has been released.")
+    return render(request, 'movies/payment_failed.html', {})
+
+
+@login_required(login_url='/login/')
+def simulate_payment(request, order_id):
+    """SANDBOX ONLY — lets us test the full booking flow without a real Razorpay account."""
+    if not settings.RAZORPAY_SANDBOX_MODE:
+        return redirect('movie_list')
+
+    payment = get_object_or_404(Payment, order_id=order_id, user=request.user)
+    outcome = request.POST.get('outcome')
+
+    if outcome == 'success':
+        with transaction.atomic():
+            payment.razorpay_payment_id = f'pay_SANDBOX_{order_id}'
+            payment.status = 'success'
+            payment.save(update_fields=['razorpay_payment_id', 'status'])
+
+            bookings = Booking.objects.filter(order_id=order_id, status='pending').select_for_update()
+            for booking in bookings:
+                booking.status = 'confirmed'
+                booking.save(update_fields=['status'])
+                seat = booking.seat
+                seat.is_booked = True
+                seat.reserved_by = None
+                seat.reserved_until = None
+                seat.save(update_fields=['is_booked', 'reserved_by', 'reserved_until'])
+
+        send_ticket_email.delay(str(order_id))
+        messages.success(request, "Payment successful! Your ticket is being emailed to you.")
+        return redirect('profile')
+
+    return payment_failed(request, order_id)
